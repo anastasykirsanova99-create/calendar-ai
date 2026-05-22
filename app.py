@@ -18,7 +18,7 @@ credentials = service_account.Credentials.from_service_account_info(
 
 service = build('calendar', 'v3', credentials=credentials)
 
-CALENDAR_ID = 'primary'
+CALENDAR_ID = '0114e94607dcd860a84c1fe451c94861d283136be270a76f1e3373108dca2fec@group.calendar.google.com'
 
 
 @app.route('/create-event', methods=['POST'])
