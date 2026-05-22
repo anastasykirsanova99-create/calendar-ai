@@ -6,10 +6,13 @@ app = Flask(__name__)
 
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 
-SERVICE_ACCOUNT_FILE = 'credentials.json'
+import json
+import os
 
-credentials = service_account.Credentials.from_service_account_file(
-    SERVICE_ACCOUNT_FILE,
+info = json.loads(os.environ["GOOGLE_CREDENTIALS"])
+
+credentials = service_account.Credentials.from_service_account_info(
+    info,
     scopes=SCOPES
 )
 
