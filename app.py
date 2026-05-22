@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from datetime import datetime, timedelta
+from num2words import num2words
 import json
 import os
 
@@ -60,7 +61,7 @@ def create_event():
 
 
 # =========================
-# AVAILABILITY (FREE/BUSY)
+# AVAILABILITY
 # =========================
 @app.route('/availability', methods=['GET'])
 def availability():
@@ -76,7 +77,52 @@ def availability():
 
     result = service.freebusy().query(body=body).execute()
 
-    return jsonify(result)
+    busy = result["calendars"][CALENDAR_ID]["busy"]
+
+    months_ua = {
+        1: "січня",
+        2: "лютого",
+        3: "березня",
+        4: "квітня",
+        5: "травня",
+        6: "червня",
+        7: "липня",
+        8: "серпня",
+        9: "вересня",
+        10: "жовтня",
+        11: "листопада",
+        12: "грудня"
+    }
+
+    busy_slots = []
+
+    for slot in busy:
+        start_dt = datetime.fromisoformat(slot["start"])
+        end_dt = datetime.fromisoformat(slot["end"])
+
+        # День словами
+        day_text = num2words(start_dt.day, lang='uk')
+
+        # Рік словами
+        year_text = num2words(start_dt.year, lang='uk')
+
+        # Години словами
+        start_hour = num2words(start_dt.hour, lang='uk')
+        end_hour = num2words(end_dt.hour, lang='uk')
+
+        formatted = (
+            f"{day_text} "
+            f"{months_ua[start_dt.month]} "
+            f"{year_text} року "
+            f"з {start_hour} "
+            f"до {end_hour}"
+        )
+
+        busy_slots.append(formatted)
+
+    return jsonify({
+        "busy_slots": busy_slots
+    })
 
 
 # =========================
