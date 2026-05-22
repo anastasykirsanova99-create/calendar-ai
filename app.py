@@ -38,12 +38,23 @@ def create_event():
             'dateTime': f'{date}T{time}:00',
             'timeZone': 'Europe/Kyiv',
         },
-        'end': {
-            'dateTime': f'{date}T{time}:00',
-            'timeZone': 'Europe/Kyiv',
-        },
-    }
+        from datetime import datetime, timedelta
 
+start_dt = datetime.fromisoformat(f"{date}T{time}:00")
+end_dt = start_dt + timedelta(hours=1)
+
+event = {
+    'summary': f'{service_name} - {name}',
+    'description': f'Телефон: {phone}',
+    'start': {
+        'dateTime': start_dt.isoformat(),
+        'timeZone': 'Europe/Kyiv',
+    },
+    'end': {
+        'dateTime': end_dt.isoformat(),
+        'timeZone': 'Europe/Kyiv',
+    },
+}
     service.events().insert(
         calendarId=CALENDAR_ID,
         body=event
