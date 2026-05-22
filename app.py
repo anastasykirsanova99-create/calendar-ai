@@ -22,6 +22,9 @@ service = build('calendar', 'v3', credentials=credentials)
 CALENDAR_ID = '0114e94607dcd860a84c1fe451c94861d283136be270a76f1e3373108dca2fec@group.calendar.google.com'
 
 
+# =========================
+# CREATE EVENT
+# =========================
 @app.route('/create-event', methods=['POST'])
 def create_event():
     data = request.json
@@ -32,7 +35,6 @@ def create_event():
     date = data.get('date')
     time = data.get('time')
 
-    # start time
     start_dt = datetime.fromisoformat(f"{date}T{time}:00")
     end_dt = start_dt + timedelta(hours=1)
 
@@ -57,5 +59,28 @@ def create_event():
     return {"success": True}
 
 
+# =========================
+# AVAILABILITY (FREE/BUSY)
+# =========================
+@app.route('/availability', methods=['GET'])
+def availability():
+    now = datetime.now()
+    end = now + timedelta(days=5)
+
+    body = {
+        "timeMin": now.isoformat() + "Z",
+        "timeMax": end.isoformat() + "Z",
+        "timeZone": "Europe/Kyiv",
+        "items": [{"id": CALENDAR_ID}]
+    }
+
+    result = service.freebusy().query(body=body).execute()
+
+    return result
+
+
+# =========================
+# RUN SERVER (Render)
+# =========================
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
