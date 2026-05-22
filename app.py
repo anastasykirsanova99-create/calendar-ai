@@ -54,6 +54,7 @@ event = {
         'dateTime': end_dt.isoformat(),
         'timeZone': 'Europe/Kyiv',
     },
+  },
 }
     service.events().insert(
         calendarId=CALENDAR_ID,
