@@ -1,4 +1,4 @@
-from flask import Flask, request
+from flask import Flask, request, jsonify
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from datetime import datetime, timedelta
@@ -56,7 +56,7 @@ def create_event():
         body=event
     ).execute()
 
-    return {"success": True}
+    return jsonify({"success": True})
 
 
 # =========================
@@ -64,7 +64,7 @@ def create_event():
 # =========================
 @app.route('/availability', methods=['GET'])
 def availability():
-    now = datetime.now()
+    now = datetime.utcnow()
     end = now + timedelta(days=5)
 
     body = {
@@ -76,7 +76,7 @@ def availability():
 
     result = service.freebusy().query(body=body).execute()
 
-    return result
+    return jsonify(result)
 
 
 # =========================
