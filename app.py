@@ -225,12 +225,13 @@ def availability():
         busy_by_date, suggested_free_slots = generate_free_slots()
 
         response_data = {
-            "working_hours": "09:00-18:00",
-            "slot_duration_minutes": 60,
-            "has_busy_slots": len(busy_by_date) > 0,
-            "busy_by_date": busy_by_date,
-            "suggested_free_slots": suggested_free_slots
-        }
+    "current_date": now.strftime("%d.%m.%Y"),
+    "working_hours": "09:00-18:00",
+    "slot_duration_minutes": 60,
+    "has_busy_slots": len(busy_by_date) > 0,
+    "busy_by_date": busy_by_date,
+    "suggested_free_slots": suggested_free_slots
+}
 
         return app.response_class(
             response=json.dumps(response_data, ensure_ascii=False),
