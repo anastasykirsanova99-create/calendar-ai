@@ -181,7 +181,7 @@ def availability():
             "slot_duration_minutes": 60,
             "has_busy_slots": len(busy_by_date) > 0,
             "busy_by_date": busy_by_date,
-            "suggested_free_slots": suggested_free_slots[:20]
+            "suggested_free_slots": suggested_free_slots
         }
 
         return app.response_class(
