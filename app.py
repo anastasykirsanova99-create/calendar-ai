@@ -5,12 +5,15 @@ from datetime import datetime, timedelta
 from num2words import num2words
 import json
 import os
+import traceback
 
 app = Flask(__name__)
 
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 
-# Google credentials из Render Environment
+# =========================
+# GOOGLE CREDENTIALS
+# =========================
 info = json.loads(os.environ["GOOGLE_CREDENTIALS"])
 
 credentials = service_account.Credentials.from_service_account_info(
@@ -28,36 +31,54 @@ CALENDAR_ID = '0114e94607dcd860a84c1fe451c94861d283136be270a76f1e3373108dca2fec@
 # =========================
 @app.route('/create-event', methods=['POST'])
 def create_event():
-    data = request.json
+    try:
+        data = request.json
 
-    name = data.get('name')
-    phone = data.get('phone')
-    service_name = data.get('service')
-    date = data.get('date')
-    time = data.get('time')
+        name = data.get('name')
+        phone = data.get('phone')
+        service_name = data.get('service')
+        date = data.get('date')
+        time = data.get('time')
 
-    start_dt = datetime.fromisoformat(f"{date}T{time}:00")
-    end_dt = start_dt + timedelta(hours=1)
+        # Формат даты: 25.05.2026
+        # Формат времени: 13:00
+        start_dt = datetime.strptime(
+            f"{date} {time}",
+            "%d.%m.%Y %H:%M"
+        )
 
-    event = {
-        'summary': f'{service_name} - {name}',
-        'description': f'Телефон: {phone}',
-        'start': {
-            'dateTime': start_dt.isoformat(),
-            'timeZone': 'Europe/Kyiv',
-        },
-        'end': {
-            'dateTime': end_dt.isoformat(),
-            'timeZone': 'Europe/Kyiv',
-        },
-    }
+        end_dt = start_dt + timedelta(hours=1)
 
-    service.events().insert(
-        calendarId=CALENDAR_ID,
-        body=event
-    ).execute()
+        event = {
+            'summary': f'{service_name} - {name}',
+            'description': f'Телефон: {phone}',
+            'start': {
+                'dateTime': start_dt.isoformat(),
+                'timeZone': 'Europe/Kyiv',
+            },
+            'end': {
+                'dateTime': end_dt.isoformat(),
+                'timeZone': 'Europe/Kyiv',
+            },
+        }
 
-    return jsonify({"success": True})
+        service.events().insert(
+            calendarId=CALENDAR_ID,
+            body=event
+        ).execute()
+
+        return jsonify({
+            "success": True,
+            "message": "Appointment created"
+        })
+
+    except Exception as e:
+        print(traceback.format_exc())
+
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
 
 
 # =========================
@@ -65,68 +86,83 @@ def create_event():
 # =========================
 @app.route('/availability', methods=['GET'])
 def availability():
-    now = datetime.utcnow()
-    end = now + timedelta(days=5)
+    try:
+        now = datetime.utcnow()
+        end = now + timedelta(days=5)
 
-    body = {
-        "timeMin": now.isoformat() + "Z",
-        "timeMax": end.isoformat() + "Z",
-        "timeZone": "Europe/Kyiv",
-        "items": [{"id": CALENDAR_ID}]
-    }
+        body = {
+            "timeMin": now.isoformat() + "Z",
+            "timeMax": end.isoformat() + "Z",
+            "timeZone": "Europe/Kyiv",
+            "items": [{"id": CALENDAR_ID}]
+        }
 
-    result = service.freebusy().query(body=body).execute()
+        result = service.freebusy().query(body=body).execute()
 
-    busy = result["calendars"][CALENDAR_ID]["busy"]
+        busy = result["calendars"][CALENDAR_ID]["busy"]
 
-    months_ua = {
-        1: "січня",
-        2: "лютого",
-        3: "березня",
-        4: "квітня",
-        5: "травня",
-        6: "червня",
-        7: "липня",
-        8: "серпня",
-        9: "вересня",
-        10: "жовтня",
-        11: "листопада",
-        12: "грудня"
-    }
+        months_ua = {
+            1: "січня",
+            2: "лютого",
+            3: "березня",
+            4: "квітня",
+            5: "травня",
+            6: "червня",
+            7: "липня",
+            8: "серпня",
+            9: "вересня",
+            10: "жовтня",
+            11: "листопада",
+            12: "грудня"
+        }
 
-    busy_slots = []
+        busy_slots = []
 
-    for slot in busy:
-        start_dt = datetime.fromisoformat(slot["start"])
-        end_dt = datetime.fromisoformat(slot["end"])
+        for slot in busy:
+            start_dt = datetime.fromisoformat(
+                slot["start"].replace("Z", "+00:00")
+            )
 
-        # День словами
-        day_text = num2words(start_dt.day, lang='uk')
+            end_dt = datetime.fromisoformat(
+                slot["end"].replace("Z", "+00:00")
+            )
 
-        # Рік словами
-        year_text = num2words(start_dt.year, lang='uk')
+            day_text = num2words(start_dt.day, lang='uk')
+            year_text = num2words(start_dt.year, lang='uk')
 
-        # Години словами
-        start_hour = num2words(start_dt.hour, lang='uk')
-        end_hour = num2words(end_dt.hour, lang='uk')
+            start_hour = num2words(start_dt.hour, lang='uk')
+            end_hour = num2words(end_dt.hour, lang='uk')
 
-        formatted = (
-            f"{day_text} "
-            f"{months_ua[start_dt.month]} "
-            f"{year_text} року "
-            f"з {start_hour} "
-            f"до {end_hour}"
+            formatted = (
+                f"{day_text} "
+                f"{months_ua[start_dt.month]} "
+                f"{year_text} року "
+                f"з {start_hour} "
+                f"до {end_hour}"
+            )
+
+            busy_slots.append(formatted)
+
+        response_data = {
+            "busy_slots": busy_slots
+        }
+
+        return app.response_class(
+            response=json.dumps(response_data, ensure_ascii=False),
+            mimetype='application/json'
         )
 
-        busy_slots.append(formatted)
+    except Exception as e:
+        print(traceback.format_exc())
 
-    return jsonify({
-        "busy_slots": busy_slots
-    })
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
 
 
 # =========================
-# RUN SERVER (Render)
+# RUN SERVER
 # =========================
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
