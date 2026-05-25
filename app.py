@@ -143,9 +143,15 @@ def availability():
 
             busy_slots.append(formatted)
 
-        response_data = {
-            "busy_slots": busy_slots
-        }
+        # Если занятых слотов нет — отдаём false
+        if len(busy_slots) == 0:
+            response_data = {
+                "busy_slots": False
+            }
+        else:
+            response_data = {
+                "busy_slots": busy_slots
+            }
 
         return app.response_class(
             response=json.dumps(response_data, ensure_ascii=False),
