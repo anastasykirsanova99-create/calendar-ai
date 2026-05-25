@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 import json
 import os
 import traceback
@@ -22,6 +23,8 @@ service = build('calendar', 'v3', credentials=credentials)
 CALENDAR_ID = '0114e94607dcd860a84c1fe451c94861d283136be270a76f1e3373108dca2fec@group.calendar.google.com'
 
 TIMEZONE = 'Europe/Kyiv'
+KYIV_TZ = ZoneInfo(TIMEZONE)
+
 WORK_START_HOUR = 9
 WORK_END_HOUR = 18
 SLOT_DURATION_HOURS = 1
@@ -29,7 +32,7 @@ DAYS_AHEAD = 5
 
 
 def parse_google_dt(value):
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(KYIV_TZ)
 
 
 def format_date(dt):
@@ -62,7 +65,7 @@ def create_event():
         start_dt = datetime.strptime(
             f"{date} {time}",
             "%d.%m.%Y %H:%M"
-        )
+        ).replace(tzinfo=KYIV_TZ)
 
         end_dt = start_dt + timedelta(hours=1)
 
@@ -100,12 +103,12 @@ def create_event():
 @app.route('/availability', methods=['GET'])
 def availability():
     try:
-        now = datetime.now(timezone.utc)
-        end = now + timedelta(days=DAYS_AHEAD)
+        now = datetime.now(KYIV_TZ)
+        end = now + timedelta(days=10)
 
         body = {
-            "timeMin": now.isoformat(),
-            "timeMax": end.isoformat(),
+            "timeMin": now.astimezone(timezone.utc).isoformat(),
+            "timeMax": end.astimezone(timezone.utc).isoformat(),
             "timeZone": TIMEZONE,
             "items": [{"id": CALENDAR_ID}]
         }
@@ -115,7 +118,6 @@ def availability():
 
         busy_by_date = {}
         suggested_free_slots = []
-
         busy_intervals = []
 
         for slot in busy:
@@ -123,6 +125,7 @@ def availability():
             busy_end = parse_google_dt(slot["end"])
 
             date_key = format_date(busy_start)
+
             busy_by_date.setdefault(date_key, []).append([
                 format_time(busy_start),
                 format_time(busy_end)
@@ -130,14 +133,14 @@ def availability():
 
             busy_intervals.append((busy_start, busy_end))
 
-        current_day = datetime.now().date()
+        current_day = datetime.now(KYIV_TZ).date()
 
         checked_days = 0
         day_offset = 0
 
         while checked_days < DAYS_AHEAD:
             day = current_day + timedelta(days=day_offset)
-            day_dt = datetime.combine(day, datetime.min.time())
+            day_dt = datetime.combine(day, datetime.min.time(), tzinfo=KYIV_TZ)
 
             day_offset += 1
 
@@ -153,10 +156,13 @@ def availability():
                     day.day,
                     hour,
                     0,
-                    tzinfo=timezone.utc
+                    tzinfo=KYIV_TZ
                 )
 
                 slot_end = slot_start + timedelta(hours=SLOT_DURATION_HOURS)
+
+                if slot_start < now:
+                    continue
 
                 is_busy = False
 
@@ -167,7 +173,7 @@ def availability():
 
                 if not is_busy:
                     suggested_free_slots.append(
-                        f"{slot_start.strftime('%d.%m.%Y')} {slot_start.strftime('%H:%M')}"
+                        f"{format_date(slot_start)} {format_time(slot_start)}"
                     )
 
         response_data = {
