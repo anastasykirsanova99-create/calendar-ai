@@ -51,6 +51,98 @@ def slot_overlaps_busy(slot_start, slot_end, busy_start, busy_end):
     return slot_start < busy_end and slot_end > busy_start
 
 
+def get_busy_between(start_dt, end_dt):
+    body = {
+        "timeMin": start_dt.astimezone(timezone.utc).isoformat(),
+        "timeMax": end_dt.astimezone(timezone.utc).isoformat(),
+        "timeZone": TIMEZONE,
+        "items": [{"id": CALENDAR_ID}]
+    }
+
+    result = service.freebusy().query(body=body).execute()
+    return result["calendars"][CALENDAR_ID].get("busy", [])
+
+
+def generate_free_slots(days_ahead=DAYS_AHEAD, limit=None):
+    now = datetime.now(KYIV_TZ)
+    search_end = now + timedelta(days=10)
+
+    body = {
+        "timeMin": now.astimezone(timezone.utc).isoformat(),
+        "timeMax": search_end.astimezone(timezone.utc).isoformat(),
+        "timeZone": TIMEZONE,
+        "items": [{"id": CALENDAR_ID}]
+    }
+
+    result = service.freebusy().query(body=body).execute()
+    busy = result["calendars"][CALENDAR_ID].get("busy", [])
+
+    busy_by_date = {}
+    busy_intervals = []
+
+    for slot in busy:
+        busy_start = parse_google_dt(slot["start"])
+        busy_end = parse_google_dt(slot["end"])
+
+        date_key = format_date(busy_start)
+
+        busy_by_date.setdefault(date_key, []).append([
+            format_time(busy_start),
+            format_time(busy_end)
+        ])
+
+        busy_intervals.append((busy_start, busy_end))
+
+    suggested_free_slots = []
+
+    current_day = now.date()
+    checked_days = 0
+    day_offset = 0
+
+    while checked_days < days_ahead:
+        day = current_day + timedelta(days=day_offset)
+        day_dt = datetime.combine(day, datetime.min.time(), tzinfo=KYIV_TZ)
+
+        day_offset += 1
+
+        if not is_working_day(day_dt):
+            continue
+
+        checked_days += 1
+
+        for hour in range(WORK_START_HOUR, WORK_END_HOUR):
+            slot_start = datetime(
+                day.year,
+                day.month,
+                day.day,
+                hour,
+                0,
+                tzinfo=KYIV_TZ
+            )
+
+            slot_end = slot_start + timedelta(hours=SLOT_DURATION_HOURS)
+
+            if slot_start < now:
+                continue
+
+            is_busy = False
+
+            for busy_start, busy_end in busy_intervals:
+                if slot_overlaps_busy(slot_start, slot_end, busy_start, busy_end):
+                    is_busy = True
+                    break
+
+            if not is_busy:
+                suggested_free_slots.append(
+                    f"{format_date(slot_start)} {format_time(slot_start)}"
+                )
+
+    if limit:
+        suggested_free_slots = suggested_free_slots[:limit]
+
+    return busy_by_date, suggested_free_slots
+
+
 @app.route('/create-event', methods=['POST'])
 def create_event():
     try:
@@ -67,7 +159,32 @@ def create_event():
             "%d.%m.%Y %H:%M"
         ).replace(tzinfo=KYIV_TZ)
 
-        end_dt = start_dt + timedelta(hours=1)
+        end_dt = start_dt + timedelta(hours=SLOT_DURATION_HOURS)
+
+        # Проверка рабочего времени
+        if start_dt.hour < WORK_START_HOUR or end_dt.hour > WORK_END_HOUR:
+            _, suggested_free_slots = generate_free_slots(limit=5)
+
+            return jsonify({
+                "success": False,
+                "error": "outside_working_hours",
+                "message": "Цей час поза робочим графіком",
+                "working_hours": "09:00-18:00",
+                "suggested_free_slots": suggested_free_slots
+            }), 409
+
+        # Проверка занятости перед созданием записи
+        busy_slots = get_busy_between(start_dt, end_dt)
+
+        if len(busy_slots) > 0:
+            _, suggested_free_slots = generate_free_slots(limit=5)
+
+            return jsonify({
+                "success": False,
+                "error": "slot_busy",
+                "message": "Цей слот вже зайнятий",
+                "suggested_free_slots": suggested_free_slots
+            }), 409
 
         event = {
             'summary': f'{service_name} - {name}',
@@ -89,7 +206,9 @@ def create_event():
 
         return jsonify({
             "success": True,
-            "message": "Appointment created"
+            "message": "Appointment created",
+            "date": date,
+            "time": time
         })
 
     except Exception as e:
@@ -103,78 +222,7 @@ def create_event():
 @app.route('/availability', methods=['GET'])
 def availability():
     try:
-        now = datetime.now(KYIV_TZ)
-        end = now + timedelta(days=10)
-
-        body = {
-            "timeMin": now.astimezone(timezone.utc).isoformat(),
-            "timeMax": end.astimezone(timezone.utc).isoformat(),
-            "timeZone": TIMEZONE,
-            "items": [{"id": CALENDAR_ID}]
-        }
-
-        result = service.freebusy().query(body=body).execute()
-        busy = result["calendars"][CALENDAR_ID].get("busy", [])
-
-        busy_by_date = {}
-        suggested_free_slots = []
-        busy_intervals = []
-
-        for slot in busy:
-            busy_start = parse_google_dt(slot["start"])
-            busy_end = parse_google_dt(slot["end"])
-
-            date_key = format_date(busy_start)
-
-            busy_by_date.setdefault(date_key, []).append([
-                format_time(busy_start),
-                format_time(busy_end)
-            ])
-
-            busy_intervals.append((busy_start, busy_end))
-
-        current_day = datetime.now(KYIV_TZ).date()
-
-        checked_days = 0
-        day_offset = 0
-
-        while checked_days < DAYS_AHEAD:
-            day = current_day + timedelta(days=day_offset)
-            day_dt = datetime.combine(day, datetime.min.time(), tzinfo=KYIV_TZ)
-
-            day_offset += 1
-
-            if not is_working_day(day_dt):
-                continue
-
-            checked_days += 1
-
-            for hour in range(WORK_START_HOUR, WORK_END_HOUR):
-                slot_start = datetime(
-                    day.year,
-                    day.month,
-                    day.day,
-                    hour,
-                    0,
-                    tzinfo=KYIV_TZ
-                )
-
-                slot_end = slot_start + timedelta(hours=SLOT_DURATION_HOURS)
-
-                if slot_start < now:
-                    continue
-
-                is_busy = False
-
-                for busy_start, busy_end in busy_intervals:
-                    if slot_overlaps_busy(slot_start, slot_end, busy_start, busy_end):
-                        is_busy = True
-                        break
-
-                if not is_busy:
-                    suggested_free_slots.append(
-                        f"{format_date(slot_start)} {format_time(slot_start)}"
-                    )
+        busy_by_date, suggested_free_slots = generate_free_slots()
 
         response_data = {
             "working_hours": "09:00-18:00",
