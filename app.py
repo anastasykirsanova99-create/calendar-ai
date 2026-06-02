@@ -6,7 +6,6 @@ from zoneinfo import ZoneInfo
 import json
 import os
 import traceback
-import re
 
 app = Flask(__name__)
 
@@ -52,177 +51,18 @@ def slot_overlaps_busy(slot_start, slot_end, busy_start, busy_end):
     return slot_start < busy_end and slot_end > busy_start
 
 
-def normalize_text(text):
-    if not text:
-        return ""
-
-    text = text.lower().strip()
-
-    for symbol in [".", ",", "!", "?"]:
-        text = text.replace(symbol, "")
-
-    return text
-
-
-def words_to_hour(text):
-    text = normalize_text(text)
-
-    mapping = {
-        "дев’яти": 9, "девяти": 9, "девятої": 9,
-        "десяти": 10, "десятої": 10,
-        "одинадцяти": 11, "одинадцятої": 11,
-        "дванадцяти": 12, "дванадцятої": 12,
-        "часу": 13, "першої": 13, "одної": 13,
-        "двох": 14, "другої": 14,
-        "трьох": 15, "третьої": 15,
-        "чотирьох": 16, "четвертої": 16,
-        "п’яти": 17, "пяти": 17, "п’ятої": 17, "пятої": 17,
-        "шести": 18, "шостої": 18
-    }
-
-    numeric_match = re.search(r'\b([0-9]{1,2})\b', text)
-
-    if numeric_match:
-        hour = int(numeric_match.group(1))
-
-        if 1 <= hour <= 8:
-            hour += 12
-
-        return hour
-
-    for word, hour in mapping.items():
-        if word in text:
-            return hour
-
-    return None
-
-
-def extract_time_period(date_text):
-    text = normalize_text(date_text)
-
-    if any(x in text for x in ["зранку", "вранці", "ранок", "до обіду"]):
-        return "morning"
-
-    if any(x in text for x in ["після обіду", "післяобід", "вдень", "день"]):
-        return "afternoon"
-
-    if any(x in text for x in ["увечері", "ввечері", "вечером", "на вечір", "вечір", "після роботи"]):
-        return "evening"
-
-    return None
-
-
-def extract_time_range(date_text):
-    text = normalize_text(date_text)
-
-    if not text:
-        return None, None
-
-    if "після" in text or "после" in text:
-        hour = words_to_hour(text)
-
-        if hour:
-            return hour, WORK_END_HOUR
-
-    if ("з " in text or "с " in text) and "до" in text:
-        parts = text.split("до", 1)
-
-        start_part = parts[0]
-        end_part = parts[1]
-
-        start_hour = words_to_hour(start_part)
-        end_hour = words_to_hour(end_part)
-
-        if start_hour and end_hour:
-            return start_hour, end_hour
-
-    return None, None
-
-
-def filter_slots_by_period(slots, period):
-    if not period:
-        return slots
-
-    filtered = []
-
-    for slot in slots:
-        start_time = slot.split("-")[0]
-        hour = int(start_time.split(":")[0])
-
-        if period == "morning" and 9 <= hour < 12:
-            filtered.append(slot)
-
-        elif period == "afternoon" and 12 <= hour < 17:
-            filtered.append(slot)
-
-        elif period == "evening" and 17 <= hour < 18:
-            filtered.append(slot)
-
-    return filtered
-
-
-def filter_slots_by_time_range(slots, start_hour, end_hour):
-    if not start_hour and not end_hour:
-        return slots
-
-    filtered = []
-
-    for slot in slots:
-        slot_start = slot.split("-")[0]
-        hour = int(slot_start.split(":")[0])
-
-        if start_hour and end_hour:
-            if start_hour <= hour < end_hour:
-                filtered.append(slot)
-
-        elif start_hour:
-            if hour >= start_hour:
-                filtered.append(slot)
-
-    return filtered
-
-
-def clean_period_and_time_words(text):
-    phrases_to_remove = [
-        "зранку", "вранці", "ранок", "до обіду",
-        "після обіду", "післяобід", "вдень", "день",
-        "увечері", "ввечері", "вечером", "на вечір",
-        "вечір", "після роботи",
-        "після", "после",
-        "дев’яти", "девяти", "девятої",
-        "десяти", "десятої",
-        "одинадцяти", "одинадцятої",
-        "дванадцяти", "дванадцятої",
-        "часу", "першої", "одної",
-        "двох", "другої",
-        "трьох", "третьої",
-        "чотирьох", "четвертої",
-        "п’яти", "пяти", "п’ятої", "пятої",
-        "шести", "шостої"
-    ]
-
-    for phrase in phrases_to_remove:
-        text = text.replace(phrase, "")
-
-    text = re.sub(r'\b[0-9]{1,2}\b', '', text)
-
-    # Важно: удаляем только отдельные предлоги, а не буквы внутри слов.
-    text = re.sub(r'\b(з|с|до)\b', '', text)
-
-    return " ".join(text.split())
-
-
 def resolve_date_text(date_text):
     now = datetime.now(KYIV_TZ)
 
     if not date_text:
         return None
 
-    text = normalize_text(date_text)
-    text = clean_period_and_time_words(text)
+    original_text = date_text.lower().strip()
 
-    if not text:
-        return format_date(now)
+    for symbol in [".", ",", "!", "?"]:
+        original_text = original_text.replace(symbol, "")
+
+    text = original_text
 
     weekdays = {
         "понеділок": 0,
@@ -412,9 +252,6 @@ def availability():
         requested_date = request.args.get("date")
         date_text = request.args.get("date_text")
 
-        time_period = extract_time_period(date_text)
-        start_hour, end_hour = extract_time_range(date_text)
-
         if date_text and not requested_date:
             requested_date = resolve_date_text(date_text)
 
@@ -433,9 +270,6 @@ def availability():
                 if working_day else []
             )
 
-            slots_for_date = filter_slots_by_period(slots_for_date, time_period)
-            slots_for_date = filter_slots_by_time_range(slots_for_date, start_hour, end_hour)
-
             busy_for_date = busy_by_date.get(requested_date, [])
 
             nearest_available_date = None
@@ -443,12 +277,9 @@ def availability():
 
             if working_day and len(slots_for_date) == 0:
                 for date_key, slots in free_slots_by_date.items():
-                    filtered_slots = filter_slots_by_period(slots, time_period)
-                    filtered_slots = filter_slots_by_time_range(filtered_slots, start_hour, end_hour)
-
-                    if len(filtered_slots) > 0:
+                    if len(slots) > 0:
                         nearest_available_date = date_key
-                        nearest_free_slots = filtered_slots[:3]
+                        nearest_free_slots = slots[:3]
                         break
 
             response_data = {
@@ -457,9 +288,6 @@ def availability():
                 "requested_date": requested_date,
                 "working_hours": "09:00-18:00",
                 "slot_duration_minutes": 60,
-                "time_period": time_period,
-                "start_hour": start_hour,
-                "end_hour": end_hour,
                 "is_working_day": working_day,
                 "available": working_day and len(slots_for_date) > 0,
                 "free_slots": slots_for_date[:3],
