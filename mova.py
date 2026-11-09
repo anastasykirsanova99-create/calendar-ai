@@ -330,9 +330,8 @@ def create_event():
 
         name = data.get('name')
         service_name = data.get('service')
-        car_type = data.get('car_type')
-        wheel_radius = data.get('wheel_radius')
-        plate_number = data.get('plate_number')
+        sphere_of_activity = data.get('sphere_of_activity')
+        budget = data.get('budget')
         date = data.get('date')
         time = data.get('time')
 
@@ -370,9 +369,8 @@ def create_event():
         event = {
             'summary': f'{service_name} - {name}',
             'description': (
-                f'Авто: {car_type}\n'
-                f'Радіус коліс: {wheel_radius}\n'
-                f'Номер авто: {plate_number}'
+                f'Сфера діяльності: {sphere_of_activity}\n'
+                f'Бюджет: {budget}'
             ),
             'start': {
                 'dateTime': start_dt.isoformat(),
